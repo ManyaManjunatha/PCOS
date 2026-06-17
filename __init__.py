@@ -1,4 +1,4 @@
-from project.api.diagnosis import DiagnosisPipeline, diagnose_patient
+from project.api.predict import predict_pcos
 
-__all__ = ["DiagnosisPipeline", "diagnose_patient"]
-__version__ = "2.0.0"
+__all__ = ["predict_pcos"]
+__version__ = "3.0.0"

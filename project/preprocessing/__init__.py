@@ -1,15 +1,5 @@
-"""Preprocessing utilities for clinical feature engineering."""
+"""Preprocessing utilities for clinical PCOS prediction."""
 
-from project.preprocessing.feature_engineering import (
-    CLINICAL_INPUT_COLUMNS,
-    MODEL_FEATURE_COLUMNS,
-    FeatureEngineer,
-    PatientFeatures,
-)
+from project.preprocessing.clinical_preprocessor import ClinicalPCOSPreprocessor
 
-__all__ = [
-    "CLINICAL_INPUT_COLUMNS",
-    "MODEL_FEATURE_COLUMNS",
-    "FeatureEngineer",
-    "PatientFeatures",
-]
+__all__ = ["ClinicalPCOSPreprocessor"]

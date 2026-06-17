@@ -1,6 +1,5 @@
-"""Model components for the PCOS risk screening MVP."""
+"""Clinical PCOS model components."""
 
-from project.models.acne_model import AcneModel
-from project.models.fusion_model import FusionModel
+from project.models.clinical_models import ClinicalPCOSModelTrainer, ClinicalPCOSPredictor
 
-__all__ = ["AcneModel", "FusionModel"]
+__all__ = ["ClinicalPCOSModelTrainer", "ClinicalPCOSPredictor"]

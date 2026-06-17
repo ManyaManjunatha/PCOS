@@ -1,5 +1,5 @@
-"""Research MVP package for AI-assisted PCOS risk screening."""
+"""Explainable clinical PCOS prediction package."""
 
-from project.api.diagnosis import DiagnosisPipeline, diagnose_patient
+from project.api.predict import predict_pcos
 
-__all__ = ["DiagnosisPipeline", "diagnose_patient"]
+__all__ = ["predict_pcos"]

@@ -1,5 +1,5 @@
 """Explainability helpers."""
 
-from project.explainability.shap_explainer import ShapExplainer
+from project.explainability.shap_explainer import ClinicalShapExplainer
 
-__all__ = ["ShapExplainer"]
+__all__ = ["ClinicalShapExplainer"]

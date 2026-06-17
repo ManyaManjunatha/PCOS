@@ -1,48 +1,80 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from pathlib import Path
+from typing import List, Tuple
 
 import numpy as np
 import pandas as pd
+from sklearn.pipeline import Pipeline
 
 
-class ShapExplainer:
-    """Per-prediction SHAP explanations for the XGBoost fusion model."""
+class ClinicalShapExplainer:
+    """SHAP explainability for the best clinical PCOS model pipeline."""
 
-    def __init__(self, model: Any, feature_columns: List[str]) -> None:
-        self.model = model
-        self.feature_columns = feature_columns
-        self._explainer = None
+    def __init__(self, pipeline: Pipeline, max_background_rows: int = 250) -> None:
+        self.pipeline = pipeline
+        self.max_background_rows = max_background_rows
 
-    def explain(self, features: pd.DataFrame) -> Dict[str, float]:
-        if self.model is None:
-            raise RuntimeError("A trained fusion model is required for SHAP explanations.")
-        if features.empty:
-            raise ValueError("features must contain at least one row.")
-        missing = [column for column in self.feature_columns if column not in features.columns]
-        if missing:
-            raise ValueError(f"Missing SHAP feature columns: {missing}")
-
-        values = self._shap_values(features[self.feature_columns])
-        first_row = np.asarray(values[0], dtype=float)
-        contributions = {
-            feature: float(contribution)
-            for feature, contribution in zip(self.feature_columns, first_row)
-        }
-        return dict(
-            sorted(
-                contributions.items(),
-                key=lambda item: abs(item[1]),
-                reverse=True,
-            )
-        )
-
-    def _shap_values(self, features: pd.DataFrame) -> np.ndarray:
+    def compute(self, x_reference: pd.DataFrame) -> Tuple[np.ndarray, pd.DataFrame, List[str]]:
         import shap
 
-        if self._explainer is None:
-            self._explainer = shap.TreeExplainer(self.model)
-        values = self._explainer.shap_values(features)
-        if isinstance(values, list):
-            values = values[-1]
-        return np.asarray(values)
+        preprocessor = self.pipeline.named_steps["preprocessor"]
+        estimator = self.pipeline.named_steps["model"]
+
+        sample = x_reference.sample(
+            n=min(len(x_reference), self.max_background_rows),
+            random_state=42,
+        )
+        transformed_array = preprocessor.transform(sample)
+        feature_names = [str(name) for name in preprocessor.get_feature_names_out()]
+        transformed = pd.DataFrame(transformed_array, columns=feature_names)
+
+        if estimator.__class__.__name__ in {"RandomForestClassifier", "XGBClassifier"}:
+            explainer = shap.TreeExplainer(estimator)
+            shap_values = explainer.shap_values(transformed)
+            if isinstance(shap_values, list):
+                shap_values = shap_values[-1]
+        else:
+            background = shap.sample(transformed, min(len(transformed), 100), random_state=42)
+            explainer = shap.LinearExplainer(estimator, background)
+            shap_values = explainer.shap_values(transformed)
+
+        return np.asarray(shap_values), transformed, feature_names
+
+    @staticmethod
+    def feature_importance(shap_values: np.ndarray, feature_names: List[str]) -> pd.DataFrame:
+        values = np.asarray(shap_values)
+        if values.ndim == 3:
+            values = values[:, :, -1]
+        mean_abs = np.abs(values).mean(axis=0)
+        return pd.DataFrame(
+            {
+                "feature": feature_names,
+                "mean_abs_shap": mean_abs,
+            }
+        ).sort_values("mean_abs_shap", ascending=False).reset_index(drop=True)
+
+    @staticmethod
+    def plot_summary(
+        shap_values: np.ndarray,
+        transformed_features: pd.DataFrame,
+        feature_names: List[str],
+        output_path: Path,
+    ) -> None:
+        import matplotlib.pyplot as plt
+        import shap
+
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        values = np.asarray(shap_values)
+        if values.ndim == 3:
+            values = values[:, :, -1]
+        shap.summary_plot(
+            values,
+            transformed_features[feature_names],
+            feature_names=feature_names,
+            show=False,
+            max_display=20,
+        )
+        plt.tight_layout()
+        plt.savefig(output_path, dpi=200, bbox_inches="tight")
+        plt.close()
