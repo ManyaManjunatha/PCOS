@@ -1,220 +1,232 @@
-# Unified Diagnosis System
+# AI-Assisted PCOS Risk Screening Tool
 
-A combined diagnostic system for PCOS (Polycystic Ovary Syndrome) detection and acne severity classification.
+Research MVP for:
 
-## Overview
+**A Multi-Modal AI Framework for Non-Invasive PCOS Risk Screening Using Dermatological Phenotypes and Clinical Features**
 
-This system provides a unified interface for two medical diagnostic models:
+This repository implements a realistic research prototype for PCOS risk screening. It is **not** a PCOS diagnostic system and does not replace clinician evaluation, laboratory testing, ultrasound, or formal diagnostic criteria.
 
-| Model | Type | Architecture | Input |
-|-------|------|--------------|-------|
-| **PCOS Detection** | Binary classification | XGBoost | Tabular patient data (CSV) |
-| **Acne Classification** | Multi-class + severity | ConvNeXt-Tiny | Skin images |
+## Repository Audit Report
+
+### Previous Architecture
+
+The repository previously contained a flat unified interface:
+
+- `diagnosis.py`: combined PCOS and acne prediction under a diagnostic API.
+- `acne/`: ConvNeXt-Tiny acne classifier and image transforms.
+- `pcos/`: XGBoost-style tabular model using legacy dataset columns.
+- `models/pcos_model.pkl`: serialized legacy PCOS model artifact.
+- `README.md`, `USAGE.md`, `test_unified.py`: documentation and tests for the old interface.
+
+### Missing Components
+
+- No fusion model combining acne severity with clinical questionnaire inputs.
+- No SHAP explanation layer.
+- No training CLI for the target MVP schema.
+- No research evaluation outputs for confusion matrix, ROC, precision, recall, F1, and AUC.
+- No clear distinction between screening output and clinical diagnosis.
+
+### Dead Code Removed
+
+- Legacy `diagnosis.py`.
+- Legacy `pcos/` preprocessing/model code tied to unsupported columns.
+- Legacy `acne/` package after moving the ConvNeXt acne wrapper into `project/models/acne_model.py`.
+- Outdated `USAGE.md` and `test_unified.py`.
+
+### Incorrect Assumptions Fixed
+
+- The old PCOS flow expected body-region hirsutism columns and Ludwig/GAGS-style fields, which does not match the target MVP.
+- The old documentation described a diagnostic system. The refactor describes a risk screening tool.
+- The old combined output presented acne and PCOS as separate predictions instead of using acne severity as one fusion feature.
+
+### Technical Debt Addressed
+
+- Added explicit feature validation and bounded numeric ranges.
+- Added reproducible model save/load artifacts.
+- Added deterministic public API output shape.
+- Added focused tests for feature engineering, risk categories, and report generation.
+
+## Refactored Architecture
+
+```text
+project/
+├── models/
+│   ├── acne_model.py
+│   └── fusion_model.py
+├── preprocessing/
+│   └── feature_engineering.py
+├── explainability/
+│   └── shap_explainer.py
+├── api/
+│   └── diagnosis.py
+├── training/
+│   └── train_fusion.py
+├── tests/
+└── README.md
+```
+
+## MVP Pipeline
+
+```text
+Acne image
+  -> ConvNeXt acne model
+  -> acne_class, acne_confidence, acne_severity_score
+
+Clinical questionnaire
+  -> age, BMI, ethnicity, menstrual regularity, hirsutism score, hair loss score
+  -> feature engineering
+
+Acne severity + clinical features
+  -> XGBoost fusion model
+  -> PCOS probability and 0-100 risk score
+  -> SHAP ranked feature contributions
+```
+
+## Inputs
+
+The public diagnosis function accepts:
+
+- Acne image path
+- Age
+- BMI
+- Ethnicity
+- Menstrual irregularity
+- Self-reported hirsutism score
+- Self-reported hair loss score
+
+Hirsutism and hair-loss values are questionnaire-based. The system does not infer mFG or Ludwig scores from images.
+
+## Output
+
+```python
+{
+    "pcos_risk_score": 0,
+    "pcos_probability": 0.0,
+    "risk_category": "Low",
+    "acne_class": "normal_skin",
+    "acne_confidence": 0.95,
+    "acne_severity": "None/minimal",
+    "acne_severity_score": 0.02,
+    "feature_importance": {
+        "menstrual_irregularity": 0.31,
+        "bmi": 0.12
+    },
+    "recommendation": "Low screening risk. Continue routine self-monitoring and seek clinical care if symptoms change.",
+    "screening_inputs": {
+        "age": 24,
+        "bmi": 22.8,
+        "ethnicity": "South Asian",
+        "menstrual_irregularity": True,
+        "hirsutism_score": 8,
+        "hair_loss_score": 1
+    }
+}
+```
+
+Risk categories:
+
+- `0-30`: Low
+- `31-70`: Moderate
+- `71-100`: High
 
 ## Installation
 
 ```bash
-cd unified_diagnosis
 pip install -r requirements.txt
 ```
 
-### Requirements
+The fusion model requires `xgboost`. SHAP explanations require `shap`.
 
-- Python 3.8+
-- For PCOS: `pandas`, `numpy`, `scikit-learn`, `xgboost`, `joblib`
-- For Acne: `torch`, `torchvision`, `pillow`
-
-## Quick Start
+## Usage
 
 ```python
-from diagnosis import Diagnose
+from project.api.diagnosis import diagnose_patient
 
-# Initialize with both models
-diagnoser = Diagnose(
-    pcos_model_path="models/pcos_model.pkl",
-    acne_model_path="models/acne_model.pth"
+report = diagnose_patient(
+    image_path="patient_acne_image.jpg",
+    age=24,
+    bmi=27.4,
+    ethnicity="South Asian",
+    menstrual_irregularity=True,
+    hirsutism_score=14,
+    hair_loss_score=2,
+    acne_model_path="artifacts/acne_model.pth",
+    fusion_model_path="artifacts/fusion_model.joblib",
 )
 
-# PCOS prediction
-pcos_result = diagnoser.predict_pcos("patient_data.csv")
-print(f"PCOS detected: {pcos_result['pcos_detected']}")
-
-# Acne prediction
-acne_result = diagnoser.predict_acne("skin_image.jpg")
-print(f"Predicted: {acne_result['predicted_class']}")
-print(f"Severity: {acne_result['severity_label']}")
-
-# Combined diagnosis
-full_result = diagnoser.diagnose("patient_data.csv", "skin_image.jpg")
+print(report)
 ```
 
-## API Reference
+## Training Data Schema
 
-### `Diagnose` Class
+The fusion training CSV must contain:
 
-#### Initialization
-
-```python
-Diagnose(
-    pcos_model_path: Optional[str] = None,
-    acne_model_path: Optional[str] = None,
-    device: Optional[str] = None
-)
+```text
+acne_severity_score
+age
+bmi
+ethnicity
+menstrual_irregularity
+hirsutism_score
+hair_loss_score
+pcos_label
 ```
 
-| Parameter | Description |
-|-----------|-------------|
-| `pcos_model_path` | Path to `.pkl` file. Required for `predict_pcos()`. |
-| `acne_model_path` | Path to `.pth` checkpoint. Required for `predict_acne()`. |
-| `device` | Device for acne inference (`'cuda'`, `'cpu'`, or `None` for auto). |
+`pcos_label` may be `0/1`, `yes/no`, `positive/negative`, or equivalent values handled by `FusionModel`.
 
-#### Methods
-
-##### `predict_pcos(data, return_proba=False)`
-
-Predict PCOS from patient tabular data.
-
-```python
-result = diagnoser.predict_pcos("patient.csv", return_proba=True)
-```
-
-**Returns:**
-```python
-{
-    'pcos_detected': True,
-    'pcos_label': 'YES',
-    'probability': {'NO': 0.15, 'YES': 0.85},  # if return_proba=True
-    'input_data': <DataFrame>
-}
-```
-
-##### `predict_acne(image_path)`
-
-Predict acne type and severity from an image.
-
-```python
-result = diagnoser.predict_acne("face.jpg")
-```
-
-**Returns:**
-```python
-{
-    'predicted_class': 'Pustules',
-    'confidence': 0.87,
-    'all_probs': {
-        'Cyst': 0.05,
-        'Papules': 0.08,
-        'Pustules': 0.87,
-        'normal_skin': 0.00
-    },
-    'severity_score': 0.72,
-    'severity_label': 'Moderate acne',
-    'severity_code': 2  # 0=None, 1=Mild, 2=Moderate, 3=Severe
-}
-```
-
-##### `diagnose(patient_data, image_path)`
-
-Run both diagnostics in a single call.
-
-```python
-result = diagnoser.diagnose("patient.csv", "face.jpg")
-# Returns: {'pcos': {...}, 'acne': {...}}
-```
-
-##### `load_pcos_model(path)` / `load_acne_model(path)`
-
-Dynamically load models after initialization.
-
-## Model Details
-
-### PCOS Detection
-
-**Architecture:** XGBoost classifier (150 estimators, max_depth=4, lr=0.1)
-
-**Expected Input Columns:**
-- Cycle history: `Month_t-6` through `Month_t-1`
-- Hirsutism features: `UpperLip`, `Chin`, `Chest`, `UpperAbdomen`, `LowerAbdomen`, `UpperArm`, `Thigh`, `UpperBack`, `LowerBack`
-- Hormonal markers: `Ludwig`, `GAGS_score`
-- Binary flags: `Cycle` (YES/NO), `HypoA` (Yes/No)
-
-**Preprocessing:**
-- Automatic column name cleaning
-- Categorical encoding (YES/NO → 1/0)
-- Missing value imputation (mean)
-- Data leakage column removal
-
-### Acne Classification
-
-**Architecture:** ConvNeXt-Tiny (ImageNet pretrained)
-- Frozen backbone: layers 0-5
-- Trainable: layers 6+ and custom classifier head
-
-**Classes:** `Cyst`, `Papules`, `Pustules`, `normal_skin`
-
-**Severity Scoring:**
-| Class | Weight |
-|-------|--------|
-| Cyst | 1.0 |
-| Pustules | 0.8 |
-| Papules | 0.6 |
-
-**Severity Levels:**
-| Code | Label | Score Range |
-|------|-------|-------------|
-| 0 | No acne | acne_sum < 0.03 |
-| 1 | Mild acne | score < 0.5 |
-| 2 | Moderate acne | 0.5 ≤ score < 0.8 |
-| 3 | Severe acne | score ≥ 0.8 |
-
-**Image Requirements:**
-- Format: Any PIL-compatible format (JPG, PNG, etc.)
-- Automatically resized to 224x224
-- Normalized to ImageNet statistics
-
-## Project Structure
-
-```
-unified_diagnosis/
-├── diagnosis.py          # Main unified interface
-├── pcos/
-│   ├── model.py          # PCOSModel class
-│   └── preprocessor.py   # Data cleaning pipeline
-├── acne/
-│   ├── model.py          # AcneModel class (ConvNeXt)
-│   └── transforms.py     # Image transforms
-├── models/               # Model artifacts
-│   ├── pcos_model.pkl
-│   └── acne_model.pth
-├── requirements.txt
-├── test_unified.py       # Test script
-└── README.md
-```
-
-## Testing
+## Training Instructions
 
 ```bash
-cd unified_diagnosis
-python test_unified.py
+python -m project.training.train_fusion \
+  --data data/fusion_training.csv \
+  --target pcos_label \
+  --model-out artifacts/fusion_model.joblib \
+  --metrics-out outputs/fusion_metrics
 ```
 
-## Training Your Own Models
+Training outputs:
 
-### PCOS Model
+- `artifacts/fusion_model.joblib`
+- `outputs/fusion_metrics/metrics.json`
+- `outputs/fusion_metrics/confusion_matrix.png`
+- `outputs/fusion_metrics/roc_curve.png`
 
-```python
-from pcos.model import PCOSModel
+## Evaluation Outputs
 
-model = PCOSModel()
-model.train(df, compare_models=True)  # Compare LR, RF, XGBoost
-model.fit(df)  # Train on full data
-model.save("models/pcos_model.pkl")
+`FusionModel.evaluate_dataframe()` returns:
+
+- Confusion matrix
+- Precision
+- Recall
+- F1 score
+- AUC
+- ROC curve arrays
+
+## SHAP Integration
+
+`project/explainability/shap_explainer.py` uses `shap.TreeExplainer` for the trained XGBoost fusion model. Each prediction returns ranked feature contributions sorted by absolute SHAP magnitude.
+
+## Research-Paper Methodology Draft
+
+This study implements a non-invasive, AI-assisted PCOS risk screening prototype combining dermatological phenotype information with structured self-reported clinical features. Acne imagery is processed using a ConvNeXt-Tiny convolutional neural network pretrained on ImageNet and adapted for four acne-related classes: cyst, papules, pustules, and normal skin. The resulting class probabilities are transformed into a normalized acne severity score using severity weights assigned to acne phenotypes.
+
+Structured patient features include age, BMI, ethnicity, menstrual regularity, self-reported hirsutism score, and self-reported hair-loss score. Feature engineering maps age into target reproductive-age groups, categorizes BMI using standard thresholds, encodes ethnicity and menstrual irregularity, and normalizes questionnaire scores. The normalized acne severity feature is concatenated with the engineered clinical features and passed to an XGBoost binary classifier to estimate PCOS risk probability.
+
+The predicted probability is converted to a 0-100 risk score and categorized as low, moderate, or high risk. Model evaluation uses a held-out test set and reports confusion matrix, precision, recall, F1 score, AUC, and ROC curve. SHAP TreeExplainer is used to generate ranked per-prediction feature contributions, supporting transparent review of the dominant factors influencing each screening result.
+
+## Assumptions and Limitations
+
+- This is a research MVP for risk screening, not clinical diagnosis.
+- The system assumes a trained acne checkpoint and a trained fusion model artifact are available.
+- The legacy `models/pcos_model.pkl` was trained for the old schema and should not be used as the new fusion model.
+- Hirsutism and hair loss are questionnaire inputs, not automated image-derived scores.
+- Acne severity is only one dermatological phenotype and may be affected by lighting, skin tone representation, image quality, and dataset bias.
+- Ethnicity encoding is simplified for MVP feasibility and must be validated carefully before any real-world use.
+- Risk categories are operational thresholds for research screening and require clinical validation.
+- SHAP explains model behavior, not biological causality.
+
+## Tests
+
+```bash
+pytest
 ```
-
-### Acne Model
-
-See `muffi_model.py` in the parent directory for the full training pipeline.
-
-## License
-
-MIT
