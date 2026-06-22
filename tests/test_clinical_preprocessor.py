@@ -37,3 +37,12 @@ def test_clinical_preprocessor_builds_feature_names():
     assert transformed.shape[0] == 2
     assert "UpperLip" in names
     assert any(name.startswith("HypoA_") for name in names)
+
+
+def test_clinical_preprocessor_strips_column_whitespace():
+    df = pd.DataFrame({"mfg result ": [3], "PCOS": ["YES"]})
+
+    cleaned = ClinicalPCOSPreprocessor().clean_column_names(df)
+
+    assert "mfg result" in cleaned.columns
+    assert "mfg result " not in cleaned.columns

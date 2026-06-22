@@ -297,9 +297,11 @@ class ClinicalPCOSPredictor:
         artifact = joblib.load(model_path)
         self.model: Pipeline = artifact["model"]
         self.best_model_name: str = artifact["best_model_name"]
+        self.preprocessor = ClinicalPCOSPreprocessor()
 
     def predict(self, records: pd.DataFrame) -> pd.DataFrame:
-        probabilities = self.model.predict_proba(records)[:, 1]
+        cleaned_records = self.preprocessor.clean_column_names(records)
+        probabilities = self.model.predict_proba(cleaned_records)[:, 1]
         labels = (probabilities >= 0.5).astype(int)
         return pd.DataFrame(
             {
